@@ -1,6 +1,7 @@
 from telethon import TelegramClient, events, Button
 from telethon.errors import FloodWaitError, UserBlockedError, InputUserDeactivatedError
 from pymongo import MongoClient
+from flask import Flask, request
 import asyncio
 import logging
 import os
@@ -24,9 +25,13 @@ API_ID = os.getenv('API_ID')
 API_HASH = os.getenv('API_HASH')
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 ADMIN_ID = int(os.getenv('ADMIN_ID'))
+PORT = int(os.getenv('PORT', 5000))  # Default port is 5000
 
 # Create the client and connect
 bot = TelegramClient('bot_pinterest', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
+
+# Create a Flask app
+app = Flask(__name__)
 
 async def full_userbase():
     return [user['user_id'] for user in users_collection.find()]
@@ -134,8 +139,25 @@ async def users(event):
         logger.error(f"Error in /users command: {e}")
         await event.respond("An error occurred while retrieving the user count.")
 
-# Start the bot
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    update = request.get_json()
+    if update:
+        asyncio.run(bot.process_new_message(update))
+    return '', 200
+
+# Start Flask server
 if __name__ == '__main__':
+    from threading import Thread
+    
+    def start_flask():
+        app.run(host='0.0.0.0', port=PORT)
+    
+    # Start Flask in a separate thread
+    flask_thread = Thread(target=start_flask)
+    flask_thread.start()
+    
+    # Start the Telegram bot
     try:
         bot.run_until_disconnected()
     except Exception as e:
